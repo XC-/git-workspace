@@ -1,0 +1,230 @@
+#!/bin/sh
+
+_AUTHOR="Aki MÄkinen"
+_REPOSITORY="https://github.com/XC-/git-workspace"
+_LICENSE="MIT"
+
+WORKSPACE_FILE=".workspace"
+WORKSPACE_GIT_CONFIGURATION=".workspace-git-config"
+WORKSPACE_DIR=""
+
+GITUSER=""
+GITHOST=""
+
+DEFAULT_LOCATION="$HOME/.local/bin"
+SCRIPT_NAME=$(basename -- "$0")
+
+debugPrint() {
+  if [ -n "$DEBUG" ]; then
+    echo $1
+  fi
+}
+
+splitString() {
+  IFS="$1" read -ra line <<< "$2"
+  echo ${line[$3]}
+}
+
+getDirectoryName() {
+  echo $(splitString "." $(splitString "/" $1 -1) 0)
+}
+
+readGitConfiguration() {
+  stat $WORKSPACE_DIR/$WORKSPACE_GIT_CONFIGURATION &> /dev/null
+  if [ $? -ne 0 ]; then
+    echo "Could not find git configuration."
+    exit 42
+  fi
+
+  while IFS= read -r line; do
+    VARNAME="$(splitString "=" $line 0)"
+    VARVALUE="$(splitString "=" $line 1)"
+    export $VARNAME=$VARVALUE
+  done < $WORKSPACE_DIR/$WORKSPACE_GIT_CONFIGURATION
+}
+
+install() {
+  read -p "Install to [default: $DEFAULT_LOCATION]: " INSTALL_TO
+  if [ -z $INSTALL_TO ]; then
+    INSTALL_TO="$DEFAULT_LOCATION"
+  fi
+  SCRIPT_LOCATION="$( cd "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
+  ln -s $SCRIPT_LOCATION/$SCRIPT_NAME $INSTALL_TO/$SCRIPT_NAME
+}
+
+gitWorkspaceInit() {
+  if [ "$WORKSPACE_DIR" != "" ] ; then
+    echo "Found a workspace definition from $WORKSPACE_DIR, will not continue as nested workspaces are not currently supported."
+    exit 1
+  fi
+  touch $WORKSPACE_FILE
+  touch $WORKSPACE_GIT_CONFIGURATION
+  echo "GITUSER=" > $WORKSPACE_GIT_CONFIGURATION
+  echo "GITHOST=" >> $WORKSPACE_GIT_CONFIGURATION
+  echo "Workspace initialized. See 'git ws help' for more info on how to configure the environment"
+}
+
+configure() {
+  while true; do
+    stat "$WORKSPACE_FILE" &> /dev/null
+    if [ $? -ne 0 ]; then
+      cd ..
+      if [ $(pwd) == "/" ]; then
+        echo "Workspace file not found from the current directory or any parent."
+        exit 1138
+      fi
+    else
+      WORKSPACE_DIR=$(pwd)
+      break
+    fi
+  done
+  debugPrint $WORKSPACE_DIR
+  readGitConfiguration
+}
+
+inDirectoryOperation() {
+  while IFS= read -r line; do
+    cd $(getDirectoryName $line)
+    git $@
+    cd ..
+  done < $WORKSPACE_DIR/$WORKSPACE_FILE
+}
+
+gitClone() {
+  if [ -z $GITUSER ]; then
+    echo "GITUSER configuration is required for clone."
+    exit 1
+  fi
+  if [ -z $GITHOST ]; then
+    echo "GITHOST configuration is required for clone."
+    exit 1
+  fi
+  while IFS= read -r line; do
+    git clone $GITUSER@$GITHOST:$line &
+  done < $WORKSPACE_DIR/$WORKSPACE_FILE
+  wait
+}
+
+wsState() {
+  NAME_LENGTH=10
+  while IFS= read -r line; do
+    LL=${#line}
+    if [ $LL -gt $NAME_LENGTH ]; then
+      NAME_LENGTH=$LL
+    fi
+  done < $WORKSPACE_DIR/$WORKSPACE_FILE
+  PRINTF_TEMPLATE="%-${NAME_LENGTH}s %-60s %-25s %-25s %-25s\n"
+
+  printf "$PRINTF_TEMPLATE" 'Directory' 'Current branch' 'Behind origin/master' 'Uncommitted files' 'Untracked files'
+  while IFS= read -r line; do
+    DIRECTORY=$(getDirectoryName $line)
+    cd $DIRECTORY
+    CURRENT_BRANCH="$(git --git-dir=$WORKSPACE_DIR/$DIRECTORY/.git branch | grep \* | cut -d ' ' -f2)"
+    BRANCH_DIFF="$(git --git-dir=$WORKSPACE_DIR/$DIRECTORY/.git rev-list --count $CURRENT_BRANCH..origin/master 2>/dev/null)"
+    if [ $? -ne 0 ]; then
+      BRANCH_DIFF="error"
+    fi
+    MODIFIED_COUNT="$(git ls-files --modified | wc -w)"
+    UNTRACKED_COUNT="$(git ls-files --exclude-standard --others | wc -l)"
+    printf "$PRINTF_TEMPLATE" $DIRECTORY $CURRENT_BRANCH $BRANCH_DIFF $MODIFIED_COUNT $UNTRACKED_COUNT
+    cd ..
+  done < $WORKSPACE_DIR/$WORKSPACE_FILE
+}
+
+help() {
+  cat << EOM
+Git Workspace
+
+Installation:
+
+  - Ensure that "git-ws" has execution permitted.
+  - Either
+    - run "./git-ws install"
+    - manually create symlink into a directory included in \$PATH
+    - copy the file to a direcotry included in \$PATH
+
+Usage:
+
+  git ws <cmd> [arg]
+
+Commands:
+
+  init:   Create a new (empty) workspace definition to the current directory
+  clone:  Clone the repositories defined in the $WORKSPACE_FILE file
+  state:  Display workspace state
+  help:   Display this help and exit
+
+  The command can be also any git operation such as push, pull or fetch (exception: clone has been redefined).
+  This operation will be run for all of the repositories/directories defined in the $WORKSPACE_FILE file.
+  e.g. "git ws pull origin/master"
+
+Configuration:
+
+  Configuration is currently in two parts. One is shareable workspace file and the other one will be user specific
+  configuration containing git host and user. This is to allow for example multiple bitbucket accounts and ssh keys.
+  Downside is that in the first version of this script, the user and host must be the same for all repositories.
+  This is something to be looked into.
+
+  $WORKSPACE_FILE:
+    - One line, one repository
+    - <path>/<repository>.git
+    - e.g.
+      MyGithubAccount/exmplarepository.git
+      MyFriendsGithubAccount/collaborativerepository.git
+
+  $WORKSPACE_GIT_CONFIGURATION:
+    - Git user
+    - Git host
+    - e.g.
+      GITUSER=git
+      GITHOST=github.com
+
+https://github.com/XC-/git-workspace
+Licensed under MIT license
+
+EOM
+}
+
+if [ $# -eq 0 ]; then
+  echo "No command specified."
+  echo ""
+  help
+  exit 1
+fi
+
+while [ $# -gt 0 ]; do
+KEY="$1"
+case $KEY in
+  install)
+    install
+    exit 1
+    ;;
+  init)
+    gitWorkspaceInit
+    exit 0
+    ;;
+  clone)
+    configure
+    gitClone
+    exit 0
+    ;;
+  push)
+    echo "Push is not permitted as workspace wide operation as it is not considered safe to do as such."
+    exit 1
+    ;;
+  state)
+    configure
+    wsState
+    exit 0
+    ;;
+  help)
+    help
+    exit 0
+    ;;
+  *)
+    configure
+    inDirectoryOperation "$@"
+    exit 0
+    ;;
+esac
+done
