@@ -115,7 +115,7 @@ def git_clone(repositories, git_configuration):
 def ws_state(wsdir, repositories):
     name_length = 10
     for k, v in repositories.items():
-        if len(k) + 2> name_length:
+        if len(k) + 2 > name_length:
             name_length = len(k) + 2
 
     print(f"{'Directory':<{name_length}} "
@@ -140,14 +140,16 @@ def ws_state(wsdir, repositories):
             branch_diff = bdsp.stdout.strip().decode("utf-8")
 
         mcsp = subprocess.run(f"git ls-files --modified | wc -w",
-                              shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=os.path.join(wsdir, name))
+                              shell=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, cwd=os.path.join(wsdir, name))
         if mcsp.returncode > 0:
             modified_count = "error"
         else:
             modified_count = mcsp.stdout.strip().decode("utf-8")
 
         ucsp = subprocess.run(f"git ls-files --exclude-standard --others | wc -l",
-                              shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=os.path.join(wsdir, name))
+                              shell=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, cwd=os.path.join(wsdir, name))
         if ucsp.returncode > 0:
             untracked_count = "error"
         else:
@@ -160,7 +162,7 @@ def ws_state(wsdir, repositories):
               f"{untracked_count:<25}")
 
 
-def help():
+def gitws_help():
     print("""
 Git Workspace
 
@@ -169,8 +171,8 @@ Installation:
   - Ensure that "git-ws" has execution permitted.
   - Either
     - run "./git-ws install"
-    - manually create symlink into a directory included in \$PATH
-    - copy the file to a direcotry included in \$PATH
+    - manually create symlink into a directory included in $PATH
+    - copy the file to a direcotry included in $PATH
 
 Usage:
 
@@ -231,10 +233,10 @@ if __name__ == '__main__':
         gconf = read_git_configuration(ws)
         reps = read_repositories(ws)
 
-    args = sys.argv[1:]
+    arguments = sys.argv[1:]
 
     commands = {
-        "help": help,
+        "help": gitws_help,
         "install": lambda: "Installation successful" if install() == 0 else "Installation failed.",
         "init": init_workspace,
         "push": lambda: disabled("Push is disabled because it is not safe to do as a workspace wide operation."),
@@ -242,9 +244,9 @@ if __name__ == '__main__':
         "state": lambda: ws_state(ws, reps)
     }
 
-    if len(args) == 0:
+    if len(arguments) == 0:
         print("No command specified")
-        help()
+        gitws_help()
         exit(1)
 
-    commands.get(args[0], lambda: in_repository_operation(" ".join(args), reps, ws))()
+    commands.get(arguments[0], lambda: in_repository_operation(" ".join(arguments), reps, ws))()
