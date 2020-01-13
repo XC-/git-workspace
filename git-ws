@@ -32,7 +32,7 @@ def disabled(msg):
 
 def search_workspace():
     directory = os.getcwd()
-    while directory is not "/":
+    while directory != "/":
         debug_print(directory)
         if WORKSPACE_FILE in os.listdir(directory):
             return directory
