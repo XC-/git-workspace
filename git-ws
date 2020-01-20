@@ -216,6 +216,10 @@ Licensed under MIT license
 
 def in_repository_operation(op, repositories, wsdir):
     for name, repo in repositories.items():
+        if not os.path.exists(wsdir, name):
+            print(f"Repository {name} not found. Skipping...")
+            continue
+
         print(f"**** {name} ****")
         sp = subprocess.run(f"git {op}", stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, shell=True, cwd=os.path.join(wsdir, name))
