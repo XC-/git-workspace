@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import concurrent.futures
 import os
 import subprocess
@@ -103,7 +102,7 @@ def git_clone(repositories, git_configuration):
                             shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if sp.returncode > 0:
             print(f"Failed to clone {repo}: ")
-            print(sp.stderr.decode("utf-8"))
+            debug_print(sp.stderr.decode("utf-8"))
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future_to_clone = {executor.submit(clone, repo): repo for name, repo in repositories.items()}
@@ -217,6 +216,10 @@ Licensed under MIT license
 
 def in_repository_operation(op, repositories, wsdir):
     for name, repo in repositories.items():
+        if not os.path.exists(wsdir, name):
+            print(f"Repository {name} not found. Skipping...")
+            continue
+
         print(f"**** {name} ****")
         sp = subprocess.run(f"git {op}", stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, shell=True, cwd=os.path.join(wsdir, name))
@@ -240,13 +243,15 @@ if __name__ == '__main__':
         "install": lambda: "Installation successful" if install() == 0 else "Installation failed.",
         "init": init_workspace,
         "push": lambda: disabled("Push is disabled because it is not safe to do as a workspace wide operation."),
-        "clone": lambda: git_clone(reps, gconf),
-        "state": lambda: ws_state(ws, reps)
+        "clone": lambda: git_clone(reps, gconf) if ws is not None else print("Workspace not found."),
+        "state": lambda: ws_state(ws, reps) if ws is not None else print("Workspace not found.")
     }
 
     if len(arguments) == 0:
         print("No command specified")
         gitws_help()
         exit(1)
-
-    commands.get(arguments[0], lambda: in_repository_operation(" ".join(arguments), reps, ws))()
+    if ws is not None:
+        commands.get(arguments[0], lambda: in_repository_operation(" ".join(arguments), reps, ws))()
+    else:
+        print("Workspace not found")
