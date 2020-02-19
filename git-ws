@@ -251,7 +251,7 @@ if __name__ == '__main__':
         print("No command specified")
         gitws_help()
         exit(1)
-    if ws is not None:
+    if ws is not None or arguments[0] in ["help", "install", "init"]:
         commands.get(arguments[0], lambda: in_repository_operation(" ".join(arguments), reps, ws))()
     else:
         print("Workspace not found")
